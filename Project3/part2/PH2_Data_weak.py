@@ -2,12 +2,14 @@ import os
 import re
 import random
 from glob import glob
+from typing import Optional  # added for Optional type
 
 import torch
 from torch.utils.data import Dataset
 from PIL import Image
 import torchvision.transforms as T
 from torchvision.transforms import functional as F
+from PIL import ImageDraw  # for drawing clicks
 
 
 class PH2Dataset(Dataset):
@@ -20,6 +22,8 @@ class PH2Dataset(Dataset):
         seed: int = 42,
         transform_img=None,
         transform_mask=None,
+        clicks_pos=5,
+        clicks_neg=5,
     ):
         assert split in ("train", "val","test"), "split must be 'train' or 'val' or 'test'"
         self.root_dir = root_dir
@@ -74,6 +78,10 @@ class PH2Dataset(Dataset):
         # transforms
         self.transform_img = transform_img if transform_img is not None else T.ToTensor()
         self.transform_mask = transform_mask or self._default_mask_transform
+        
+        # click simulation params
+        self.clicks_pos = clicks_pos
+        self.clicks_neg = clicks_neg
 
     def __len__(self):
         return len(self.pairs)
@@ -87,10 +95,40 @@ class PH2Dataset(Dataset):
         mask = F.center_crop(mask, (512, 512))
         
         # implement click simulation 
+        m_pos = (T.ToTensor()(mask)[0] > 0.5)
+        m_pos_eroded = self._square_erode(m_pos, radius=10)
+        m_neg = ~m_pos
+        m_neg_eroded = self._square_erode(m_neg, radius=10)
+        img_drawn = img.copy()
+        draw = ImageDraw.Draw(img_drawn)
+        
+        # draw positive clicks
+        for _ in range(self.clicks_pos):
+            ys, xs = torch.nonzero(m_pos_eroded, as_tuple=True)
+            i = torch.randint(0, xs.numel(), (1,)).item()
+            pt = (int(xs[i]), int(ys[i]))
+            draw.circle((pt[0], pt[1]), 10, fill=(0, 255, 0))
+            
+        # draw negative clicks
+        for _ in range(self.clicks_neg):
+            ys, xs = torch.nonzero(m_neg_eroded, as_tuple=True)
+            i = torch.randint(0, xs.numel(), (1,)).item()
+            pt = (int(xs[i]), int(ys[i]))
+            draw.circle((pt[0], pt[1]), 10, fill=(255, 0, 0))
 
-        x = self.transform_img(img)
+        x = self.transform_img(img_drawn)
         y = self.transform_mask(mask)  # 1xHxW, values {0,1}
         return x, y
+    
+    @staticmethod
+    def _square_erode(mask_2d: torch.Tensor, radius: int) -> torch.Tensor: 
+        if radius <= 0: 
+            return mask_2d
+        x = mask_2d.unsqueeze(0).unsqueeze(0).float()
+        inv = 1.0 - x
+        inv_dil = torch.nn.functional.max_pool2d(inv, kernel_size=2*radius+1, stride=1, padding=radius)
+        y = 1.0 - inv_dil
+        return (y[0, 0] > 0.5).to(mask_2d.dtype)
 
     @staticmethod
     def _default_mask_transform(mask_pil: Image.Image) -> torch.Tensor:
@@ -100,7 +138,6 @@ class PH2Dataset(Dataset):
         m = T.ToTensor()(mask_pil)      # float in [0,1], shape (1,H,W)
         m = (m > 0.5).to(torch.long)    # binarize; use .float() if training with BCE
         return m
-
 
 def make_ph2_loaders(
     root_dir: str,
