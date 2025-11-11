@@ -170,6 +170,54 @@ def save_all_preds(model, loader, device, out_dir="preds", threshold=0.5):
             idx_global += 1
 
     print(f"Saved {idx_global} images to: {out_dir}")
+
+@torch.no_grad()
+def save_all_preds_point_supervision(model, loader, device, out_dir="preds", threshold=0.5):
+    os.makedirs(out_dir, exist_ok=True)
+    model.eval()
+
+    idx_global = 0
+    for xb, yb, pos_xy, neg_xy in loader:
+        xb = xb.to(device)
+        yb = yb.to(device)
+
+        logits = model(xb)
+        probs = torch.sigmoid(logits)
+        preds = (probs >= threshold).float()
+
+        B = xb.size(0)
+        for i in range(B):
+            x = xb[i].detach().cpu()
+            y = yb[i].detach().cpu()
+            pr = preds[i].detach().cpu()
+
+            # squeeze channel for masks
+            if y.ndim == 3 and y.size(0) == 1:
+                y = y[0]
+            if pr.ndim == 3 and pr.size(0) == 1:
+                pr = pr[0]
+
+            plt.figure(figsize=(12, 4))
+            plt.subplot(1, 3, 1)
+            plt.title("Image")
+            plt.imshow(x.permute(1, 2, 0))
+            plt.axis("off")
+            plt.subplot(1, 3, 2)
+            plt.title("Label")
+            plt.imshow(y, cmap="gray")
+            plt.axis("off")
+            plt.subplot(1, 3, 3)
+            plt.title("Prediction")
+            plt.imshow(pr, cmap="gray")
+            plt.axis("off")
+            plt.tight_layout()
+
+            out_path = os.path.join(out_dir, f"sample_{idx_global:05d}.png")
+            plt.savefig(out_path, dpi=150)
+            plt.close()
+            idx_global += 1
+
+    print(f"Saved {idx_global} images to: {out_dir}")  
     
 def point_level_loss(logits, mask, pos_xy, neg_xy):
     """
@@ -309,84 +357,67 @@ train_loader_PH2, val_loader_PH2, test_loader_PH2 = make_ph2_loaders(
     mask_transform=None,
 )
 
-# # test clicks and save the picture
-# train_ds = PH2Dataset(
-#     root_dir="/dtu/datasets1/02516/PH2_Dataset_images",
-#     split="train",
-#     val_ratio=0.2,
-#     test_ratio=0.2,
-#     seed=42,
-#     transform_img=T.ToTensor(),
-#     transform_mask=None,
-#     clicks_pos=5,
-#     clicks_neg=5,
-# )
+# test clicks and save the picture
+train_ds = PH2Dataset(
+    root_dir="/dtu/datasets1/02516/PH2_Dataset_images",
+    split="train",
+    val_ratio=0.2,
+    test_ratio=0.2,
+    seed=42,
+    transform_img=T.ToTensor(),
+    transform_mask=None,
+    clicks_pos=5,
+    clicks_neg=5,
+)
 
-# fig, axes = plt.subplots(5, 2)
-# axes = axes.flatten()
-# for i in range(5):
-#     x,y = train_ds[i]
+fig, axes = plt.subplots(1, 2)
+axes = axes.flatten()
+for i in range(1):
+    x,y,_,_ = train_ds[i]
 
-#     xi = x.detach().cpu()
-#     yi = y.detach().cpu()
-#     # prepare image array
-#     if xi.ndim == 3 and xi.shape[0] == 3:
-#         img_np = xi.permute(1, 2, 0).clamp(0, 1).numpy()
-#         img_cmap = None
-#     elif xi.ndim == 3 and xi.shape[0] == 1:
-#         img_np = xi[0].clamp(0, 1).numpy()
-#         img_cmap = "gray"
-#     else:
-#         # fallback
-#         img_np = xi.squeeze().clamp(0, 1).numpy()
-#         img_cmap = "gray"
-#     # mask array
-#     mask_np = yi[0].float().numpy() if yi.ndim == 3 else yi.float().numpy()
+    xi = x.detach().cpu()
+    yi = y.detach().cpu()
+    # prepare image array
+    if xi.ndim == 3 and xi.shape[0] == 3:
+        img_np = xi.permute(1, 2, 0).clamp(0, 1).numpy()
+        img_cmap = None
+    elif xi.ndim == 3 and xi.shape[0] == 1:
+        img_np = xi[0].clamp(0, 1).numpy()
+        img_cmap = "gray"
+    else:
+        # fallback
+        img_np = xi.squeeze().clamp(0, 1).numpy()
+        img_cmap = "gray"
+    # mask array
+    mask_np = yi[0].float().numpy() if yi.ndim == 3 else yi.float().numpy()
 
-#     # plt.figure(figsize=(8, 4))
-#     # plt.subplot(1, 2, 1)
-#     axes[2*i].set_title(f"Image {i+1}")
-#     axes[2*i].imshow(img_np, cmap=img_cmap)
-#     axes[2*i].axis("off")
-#     # plt.subplot(1, 2, 2)
-#     axes[2*i + 1].set_title(f"Mask {i+1}")
-#     axes[2*i + 1].imshow(mask_np, cmap="gray")
-#     axes[2*i + 1].axis("off")
+    axes[2*i].set_title(f"Image {i+1}")
+    axes[2*i].imshow(img_np, cmap=img_cmap)
+    axes[2*i].axis("off")
+    axes[2*i + 1].set_title(f"Mask {i+1}")
+    axes[2*i + 1].imshow(mask_np, cmap="gray")
+    axes[2*i + 1].axis("off")
 
-# plt.tight_layout()
-# plt.savefig("clicks.png", dpi=150)
-# plt.close()
+plt.tight_layout()
+plt.savefig("clicks.png", dpi=150)
+plt.close()
 
-# click annotations, training loop
-print("Started training")
-for epoch in range(10):
-    tr_loss, tr_m = train_one_epoch_point_supervision(model2, train_loader_PH2, optimizer2, device)
-    va_loss, va_m = eval_epoch_point_supervision(model2, val_loader_PH2, device)
-    print(f"[PH2][{epoch+1:02d}] "
-          f"train_loss={tr_loss:.4f}  val_loss={va_loss:.4f} | "
-          f"train: Dice={tr_m['dice']:.3f} IoU={tr_m['iou']:.3f} Acc={tr_m['acc']:.3f} Sen={tr_m['sen']:.3f} Spec={tr_m['spe']:.3f} | "
-          f"val: Dice={va_m['dice']:.3f} IoU={va_m['iou']:.3f} Acc={va_m['acc']:.3f} Sen={va_m['sen']:.3f} Spec={va_m['spe']:.3f}")
-
-
-metrics = test_epoch_point_supervision(model2, test_loader_PH2, device, threshold=0.5)
-print(metrics)
-
-# # UNET PH2
+# # click annotations, training loop
+# print("Started training")
 # for epoch in range(10):
-#     tr_loss, tr_m = train_one_epoch(model2, train_loader_PH2, optimizer2, criterion, device)
-#     va_loss, va_m = eval_epoch(model2, val_loader_PH2, criterion, device)
+#     tr_loss = train_one_epoch_point_supervision(model2, train_loader_PH2, optimizer2, device)
+#     va_loss, va_m = eval_epoch_point_supervision(model2, val_loader_PH2, device)
 #     print(f"[PH2][{epoch+1:02d}] "
 #           f"train_loss={tr_loss:.4f}  val_loss={va_loss:.4f} | "
-#           f"train: Dice={tr_m['dice']:.3f} IoU={tr_m['iou']:.3f} Acc={tr_m['acc']:.3f} Sen={tr_m['sen']:.3f} Spec={tr_m['spe']:.3f} | "
+#         #   f"train: Dice={tr_m['dice']:.3f} IoU={tr_m['iou']:.3f} Acc={tr_m['acc']:.3f} Sen={tr_m['sen']:.3f} Spec={tr_m['spe']:.3f} | "
 #           f"val: Dice={va_m['dice']:.3f} IoU={va_m['iou']:.3f} Acc={va_m['acc']:.3f} Sen={va_m['sen']:.3f} Spec={va_m['spe']:.3f}")
 
 
-# metrics = test_epoch(model2, test_loader_PH2, device, threshold=0.5)
+# metrics = test_epoch_point_supervision(model2, test_loader_PH2, device, threshold=0.5)
 # print(metrics)
 
 # #for visual inspection, save predictions on test set
-# save_all_preds(model2, test_loader_PH2, device, out_dir="test_ph2_unet", threshold=0.5)
-
+# save_all_preds_point_supervision(model2, test_loader_PH2, device, out_dir="test_ph2_unet", threshold=0.5)
 
 # # Ablation -------------
 

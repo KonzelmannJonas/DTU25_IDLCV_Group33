@@ -96,9 +96,9 @@ class PH2Dataset(Dataset):
         
         # implement click simulation 
         m_pos = (T.ToTensor()(mask)[0] > 0.5)
-        m_pos_eroded = self._square_erode(m_pos, radius=10)
+        m_pos_eroded = self._square_erode(m_pos, radius=1)
         m_neg = ~m_pos
-        m_neg_eroded = self._square_erode(m_neg, radius=10)
+        m_neg_eroded = self._square_erode(m_neg, radius=1)
         img_drawn = img.copy()
         draw = ImageDraw.Draw(img_drawn)
         pos_pts = []
@@ -107,18 +107,24 @@ class PH2Dataset(Dataset):
         # draw positive clicks
         for _ in range(self.clicks_pos):
             ys, xs = torch.nonzero(m_pos_eroded, as_tuple=True)
-            i = torch.randint(0, xs.numel(), (1,)).item()
-            pt = (int(xs[i]), int(ys[i]))
-            pos_pts.append(pt)
-            draw.circle((pt[0], pt[1]), 10, fill=(0, 255, 0))
+            if xs.numel() != 0:
+                i = torch.randint(0, xs.numel(), (1,)).item()
+                pt = (int(xs[i]), int(ys[i]))
+                pos_pts.append(pt)
+                draw.circle((pt[0], pt[1]), 10, fill=(0, 255, 0))
+            elif xs.numel() == 0:
+                pos_pts.append((-1, -1))  # indicate no valid positive point available
             
         # draw negative clicks
         for _ in range(self.clicks_neg):
             ys, xs = torch.nonzero(m_neg_eroded, as_tuple=True)
-            i = torch.randint(0, xs.numel(), (1,)).item()
-            pt = (int(xs[i]), int(ys[i]))
-            neg_pts.append(pt)
-            draw.circle((pt[0], pt[1]), 10, fill=(255, 0, 0))
+            if xs.numel() != 0:
+                i = torch.randint(0, xs.numel(), (1,)).item()
+                pt = (int(xs[i]), int(ys[i]))
+                neg_pts.append(pt)
+                draw.circle((pt[0], pt[1]), 10, fill=(255, 0, 0))
+            else:
+                neg_pts.append((-1, -1))  # indicate no valid negative point available
 
         x = self.transform_img(img_drawn)
         y = self.transform_mask(mask)  # 1xHxW, values {0,1}
