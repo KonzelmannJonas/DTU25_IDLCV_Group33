@@ -170,37 +170,114 @@ def save_all_preds(model, loader, device, out_dir="preds", threshold=0.5):
             idx_global += 1
 
     print(f"Saved {idx_global} images to: {out_dir}")
+    
+def point_level_loss(logits, mask, pos_xy, neg_xy):
+    """
+    Compute BCE loss at click positions.
+    Args:
+        logits: Predicted logits (B, 1, H, W).
+        mask: Ground truth mask (B, 1, H, W).
+        pos_xy: List of positive click positions for each batch.
+        neg_xy: List of negative click positions for each batch.
+    """
+    bce = nn.BCEWithLogitsLoss(reduction="none")
+    loss = 0.0
 
+    for b in range(logits.size(0)):  # Iterate over batch
+        pos = pos_xy[b]
+        neg = neg_xy[b]
 
-# Example usage with your loaders (Drive or PH2):
+        # Extract logits and ground truth at click positions
+        pos_logits = logits[b, 0, [y for x, y in pos], [x for x, y in pos]]
+        neg_logits = logits[b, 0, [y for x, y in neg], [x for x, y in neg]]
+        pos_gt = mask[b, 0, [y for x, y in pos], [x for x, y in pos]]
+        neg_gt = mask[b, 0, [y for x, y in neg], [x for x, y in neg]]
 
-# train_loader_PH2, val_loader_PH2,test_loader_PH2 = make_ph2_loaders(
-#     root_dir="/dtu/datasets1/02516/PH2_Dataset_images",
-#     batch_size=2,
-#     img_transform=T.ToTensor(),
-#     mask_transform=None
-# )
+        # Compute BCE loss at click positions
+        pos_loss = bce(pos_logits, pos_gt)
+        neg_loss = bce(neg_logits, neg_gt)
+        loss += pos_loss.mean() + neg_loss.mean()
 
-# train_loader_DRIVE, val_loader_DRIVE,test_loader_DRIVE = make_drive_loaders(
-#     root_dir="/dtu/datasets1/02516/DRIVE",
-#     batch_size=2,
-#     img_transform=T.ToTensor(),
-#     mask_transform=None
-# )
+    return loss / logits.size(0)  # Average over batch
 
+def train_one_epoch_point_supervision(model, loader, optimizer, device):
+    model.train()
+    total_loss = 0.0
 
-# for epoch in range(10):
-#     tr_loss, tr_m = train_one_epoch(model, train_loader_PH2, optimizer, criterion, device)
-#     va_loss, va_m = eval_epoch(model, val_loader_PH2, criterion, device)
-#     print(f"[PH2][{epoch+1:02d}] "
-#           f"train_loss={tr_loss:.4f}  val_loss={va_loss:.4f}")
+    for xb, yb, pos_xy, neg_xy in loader:
+        xb = xb.to(device)
+        yb = yb.to(device).float()  # (B,1,H,W) in {0,1}
 
+        optimizer.zero_grad()
+        logits = model(xb)  # logits
+        loss = point_level_loss(logits, yb, pos_xy, neg_xy)
+        loss.backward()
+        optimizer.step()
 
-# metrics = test_epoch(model, test_loader_PH2, device, threshold=0.5)
-# print(metrics)
+        total_loss += loss.item()
 
-# #for visual inspection, save predictions on test set
-# save_all_preds(model, test_loader_PH2, device, out_dir="test_PH2_CNN", threshold=0.5)
+    avg_loss = total_loss / max(1, len(loader))
+    return avg_loss
+
+@torch.no_grad()
+def eval_epoch_point_supervision(model, loader, device, threshold=0.5):
+    model.eval()
+    total_loss = 0.0
+    M = {"dice": 0.0, "iou": 0.0, "acc": 0.0, "sen": 0.0, "spe": 0.0}
+    n = 0
+
+    for xb, yb, pos_xy, neg_xy in loader:
+        xb = xb.to(device)
+        yb = yb.to(device).float()
+
+        logits = model(xb)  # logits
+        total_loss += point_level_loss(logits, yb, pos_xy, neg_xy)
+
+        probs = torch.sigmoid(logits)
+        preds = (probs >= threshold).float()
+        yb_ = yb[:, 0] if yb.ndim == 4 and yb.size(1) == 1 else yb
+        pr_ = preds[:, 0] if preds.ndim == 4 and preds.size(1) == 1 else preds
+        M["dice"] += dice(pr_, yb_).item()
+        M["iou"] += iou(pr_, yb_).item()
+        M["acc"] += accuracy(pr_, yb_).item()
+        M["sen"] += sensitivity(pr_, yb_).item()
+        M["spe"] += specificity(pr_, yb_).item()
+        n += 1
+
+    avg_loss = total_loss / max(1, len(loader))
+    avg_metrics = {k: M[k] / max(1, n) for k in M}
+    return avg_loss, avg_metrics
+
+@torch.no_grad()
+def test_epoch_point_supervision(model, loader, device, threshold=0.5):
+    model.eval()
+    N = 0
+    sums = {"dice": 0.0, "iou": 0.0, "acc": 0.0, "sen": 0.0, "spe": 0.0}
+
+    for xb, yb, pos_xy, neg_xy in loader:
+        xb = xb.to(device)
+        yb = yb.to(device)
+        if yb.ndim == 4 and yb.size(1) == 1:
+            yb = yb[:, 0]
+        yb = yb.long()
+
+        logits = model(xb)
+        if logits.ndim == 4 and logits.size(1) == 1:
+            logits = logits[:, 0]
+        preds = (torch.sigmoid(logits) >= threshold).long()
+
+        bsz = xb.size(0)
+        N += bsz
+        sums["dice"] += dice(preds, yb).item() * bsz
+        sums["iou"] += iou(preds, yb).item() * bsz
+        sums["acc"] += accuracy(preds, yb).item() * bsz
+        sums["sen"] += sensitivity(preds, yb).item() * bsz
+        sums["spe"] += specificity(preds, yb).item() * bsz
+
+    # dataset-weighted averages
+    for k in sums:
+        sums[k] /= max(N, 1)
+    return sums
 
 
 # UNET --------------------
@@ -232,55 +309,69 @@ train_loader_PH2, val_loader_PH2, test_loader_PH2 = make_ph2_loaders(
     mask_transform=None,
 )
 
-# test clicks
-train_ds = PH2Dataset(
-    root_dir="/dtu/datasets1/02516/PH2_Dataset_images",
-    split="train",
-    val_ratio=0.2,
-    test_ratio=0.2,
-    seed=42,
-    transform_img=T.ToTensor(),
-    transform_mask=None,
-    clicks_pos=5,
-    clicks_neg=5,
-)
+# # test clicks and save the picture
+# train_ds = PH2Dataset(
+#     root_dir="/dtu/datasets1/02516/PH2_Dataset_images",
+#     split="train",
+#     val_ratio=0.2,
+#     test_ratio=0.2,
+#     seed=42,
+#     transform_img=T.ToTensor(),
+#     transform_mask=None,
+#     clicks_pos=5,
+#     clicks_neg=5,
+# )
 
-fig, axes = plt.subplots(5, 2)
-axes = axes.flatten()
-for i in range(5):
-    x,y = train_ds[i]
+# fig, axes = plt.subplots(5, 2)
+# axes = axes.flatten()
+# for i in range(5):
+#     x,y = train_ds[i]
 
-    xi = x.detach().cpu()
-    yi = y.detach().cpu()
-    # prepare image array
-    if xi.ndim == 3 and xi.shape[0] == 3:
-        img_np = xi.permute(1, 2, 0).clamp(0, 1).numpy()
-        img_cmap = None
-    elif xi.ndim == 3 and xi.shape[0] == 1:
-        img_np = xi[0].clamp(0, 1).numpy()
-        img_cmap = "gray"
-    else:
-        # fallback
-        img_np = xi.squeeze().clamp(0, 1).numpy()
-        img_cmap = "gray"
-    # mask array
-    mask_np = yi[0].float().numpy() if yi.ndim == 3 else yi.float().numpy()
+#     xi = x.detach().cpu()
+#     yi = y.detach().cpu()
+#     # prepare image array
+#     if xi.ndim == 3 and xi.shape[0] == 3:
+#         img_np = xi.permute(1, 2, 0).clamp(0, 1).numpy()
+#         img_cmap = None
+#     elif xi.ndim == 3 and xi.shape[0] == 1:
+#         img_np = xi[0].clamp(0, 1).numpy()
+#         img_cmap = "gray"
+#     else:
+#         # fallback
+#         img_np = xi.squeeze().clamp(0, 1).numpy()
+#         img_cmap = "gray"
+#     # mask array
+#     mask_np = yi[0].float().numpy() if yi.ndim == 3 else yi.float().numpy()
 
-    # plt.figure(figsize=(8, 4))
-    # plt.subplot(1, 2, 1)
-    axes[2*i].set_title(f"Image {i+1}")
-    axes[2*i].imshow(img_np, cmap=img_cmap)
-    axes[2*i].axis("off")
-    # plt.subplot(1, 2, 2)
-    axes[2*i + 1].set_title(f"Mask {i+1}")
-    axes[2*i + 1].imshow(mask_np, cmap="gray")
-    axes[2*i + 1].axis("off")
+#     # plt.figure(figsize=(8, 4))
+#     # plt.subplot(1, 2, 1)
+#     axes[2*i].set_title(f"Image {i+1}")
+#     axes[2*i].imshow(img_np, cmap=img_cmap)
+#     axes[2*i].axis("off")
+#     # plt.subplot(1, 2, 2)
+#     axes[2*i + 1].set_title(f"Mask {i+1}")
+#     axes[2*i + 1].imshow(mask_np, cmap="gray")
+#     axes[2*i + 1].axis("off")
 
-plt.tight_layout()
-plt.savefig("clicks.png", dpi=150)
-plt.close()
+# plt.tight_layout()
+# plt.savefig("clicks.png", dpi=150)
+# plt.close()
 
-# # # UNET PH2
+# click annotations, training loop
+print("Started training")
+for epoch in range(10):
+    tr_loss, tr_m = train_one_epoch_point_supervision(model2, train_loader_PH2, optimizer2, device)
+    va_loss, va_m = eval_epoch_point_supervision(model2, val_loader_PH2, device)
+    print(f"[PH2][{epoch+1:02d}] "
+          f"train_loss={tr_loss:.4f}  val_loss={va_loss:.4f} | "
+          f"train: Dice={tr_m['dice']:.3f} IoU={tr_m['iou']:.3f} Acc={tr_m['acc']:.3f} Sen={tr_m['sen']:.3f} Spec={tr_m['spe']:.3f} | "
+          f"val: Dice={va_m['dice']:.3f} IoU={va_m['iou']:.3f} Acc={va_m['acc']:.3f} Sen={va_m['sen']:.3f} Spec={va_m['spe']:.3f}")
+
+
+metrics = test_epoch_point_supervision(model2, test_loader_PH2, device, threshold=0.5)
+print(metrics)
+
+# # UNET PH2
 # for epoch in range(10):
 #     tr_loss, tr_m = train_one_epoch(model2, train_loader_PH2, optimizer2, criterion, device)
 #     va_loss, va_m = eval_epoch(model2, val_loader_PH2, criterion, device)

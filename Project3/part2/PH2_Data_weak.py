@@ -101,12 +101,15 @@ class PH2Dataset(Dataset):
         m_neg_eroded = self._square_erode(m_neg, radius=10)
         img_drawn = img.copy()
         draw = ImageDraw.Draw(img_drawn)
+        pos_pts = []
+        neg_pts = []
         
         # draw positive clicks
         for _ in range(self.clicks_pos):
             ys, xs = torch.nonzero(m_pos_eroded, as_tuple=True)
             i = torch.randint(0, xs.numel(), (1,)).item()
             pt = (int(xs[i]), int(ys[i]))
+            pos_pts.append(pt)
             draw.circle((pt[0], pt[1]), 10, fill=(0, 255, 0))
             
         # draw negative clicks
@@ -114,11 +117,12 @@ class PH2Dataset(Dataset):
             ys, xs = torch.nonzero(m_neg_eroded, as_tuple=True)
             i = torch.randint(0, xs.numel(), (1,)).item()
             pt = (int(xs[i]), int(ys[i]))
+            neg_pts.append(pt)
             draw.circle((pt[0], pt[1]), 10, fill=(255, 0, 0))
 
         x = self.transform_img(img_drawn)
         y = self.transform_mask(mask)  # 1xHxW, values {0,1}
-        return x, y
+        return x, y, pos_pts, neg_pts
     
     @staticmethod
     def _square_erode(mask_2d: torch.Tensor, radius: int) -> torch.Tensor: 
