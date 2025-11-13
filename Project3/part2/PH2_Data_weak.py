@@ -4,6 +4,7 @@ import random
 from glob import glob
 from typing import Optional  # added for Optional type
 
+import numpy as np
 import torch
 from torch.utils.data import Dataset
 from PIL import Image
@@ -24,8 +25,11 @@ class PH2Dataset(Dataset):
         transform_mask=None,
         clicks_pos=5,
         clicks_neg=5,
+        sampling_method: str = "random",
+        poisson_min_dist: int = 50,
     ):
         assert split in ("train", "val","test"), "split must be 'train' or 'val' or 'test'"
+        assert sampling_method in ("random", "grid", "boundary", "poisson"), "sampling_method must be 'random', 'grid', 'boundary', or 'poisson'"
         self.root_dir = root_dir
 
         # collect cases (non-contiguous IDs allowed)
@@ -82,6 +86,8 @@ class PH2Dataset(Dataset):
         # click simulation params
         self.clicks_pos = clicks_pos
         self.clicks_neg = clicks_neg
+        self.sampling_method = sampling_method
+        self.poisson_min_dist = poisson_min_dist
 
     def __len__(self):
         return len(self.pairs)
@@ -101,34 +107,148 @@ class PH2Dataset(Dataset):
         m_neg_eroded = self._square_erode(m_neg, radius=1)
         img_drawn = img.copy()
         draw = ImageDraw.Draw(img_drawn)
-        pos_pts = []
-        neg_pts = []
+        
+        # generate points based on sampling method
+        if self.sampling_method == "random":
+            pos_pts = self._sample_random_points(m_pos_eroded, self.clicks_pos)
+            neg_pts = self._sample_random_points(m_neg_eroded, self.clicks_neg)
+        elif self.sampling_method == "grid":
+            pos_pts = self._sample_grid_points(m_pos_eroded, self.clicks_pos)
+            neg_pts = self._sample_grid_points(m_neg_eroded, self.clicks_neg)
+        elif self.sampling_method == "boundary":
+            pos_pts = self._sample_boundary_points(m_pos_eroded, self.clicks_pos)
+            neg_pts = self._sample_boundary_points(m_neg_eroded, self.clicks_neg)
+        else:  # poisson sampling
+            pos_pts = self._sample_poisson_points(m_pos_eroded, self.clicks_pos)
+            neg_pts = self._sample_poisson_points(m_neg_eroded, self.clicks_neg)
         
         # draw positive clicks
-        for _ in range(self.clicks_pos):
-            ys, xs = torch.nonzero(m_pos_eroded, as_tuple=True)
-            if xs.numel() != 0:
-                i = torch.randint(0, xs.numel(), (1,)).item()
-                pt = (int(xs[i]), int(ys[i]))
-                pos_pts.append(pt)
+        for pt in pos_pts:
+            if pt != (-1, -1):
                 draw.circle((pt[0], pt[1]), 10, fill=(0, 255, 0))
-            elif xs.numel() == 0:
-                pos_pts.append((-1, -1))  # indicate no valid positive point available
             
         # draw negative clicks
-        for _ in range(self.clicks_neg):
-            ys, xs = torch.nonzero(m_neg_eroded, as_tuple=True)
-            if xs.numel() != 0:
-                i = torch.randint(0, xs.numel(), (1,)).item()
-                pt = (int(xs[i]), int(ys[i]))
-                neg_pts.append(pt)
+        for pt in neg_pts:
+            if pt != (-1, -1):
                 draw.circle((pt[0], pt[1]), 10, fill=(255, 0, 0))
-            else:
-                neg_pts.append((-1, -1))  # indicate no valid negative point available
 
         x = self.transform_img(img_drawn)
         y = self.transform_mask(mask)  # 1xHxW, values {0,1}
         return x, y, pos_pts, neg_pts
+    
+    def _sample_random_points(self, mask: torch.Tensor, num_points: int):
+        """Sample points randomly from the mask."""
+        pts = []
+        for _ in range(num_points):
+            ys, xs = torch.nonzero(mask, as_tuple=True)
+            if xs.numel() != 0:
+                i = torch.randint(0, xs.numel(), (1,)).item()
+                pt = (int(xs[i]), int(ys[i]))
+                pts.append(pt)
+            else:
+                pts.append((-1, -1))  # indicate no valid point available
+        return pts
+    
+    def _sample_grid_points(self, mask: torch.Tensor, max_points: int):
+        """Sample points using grid-based sampling from the mask with auto-calculated spacing."""
+        ys, xs = torch.nonzero(mask, as_tuple=True)
+        if len(xs) == 0:
+            return [(-1, -1)] * max_points
+
+        h, w = mask.shape
+        
+        # Calculate optimal spacing based on desired number of points
+        # Assuming we want a roughly square grid distribution
+        total_area = h * w
+        points_per_unit_area = max_points / total_area
+        ideal_spacing = max(1, int((1.0 / points_per_unit_area) ** 0.5))
+        
+        # Try different spacing values to get close to desired number of points
+        best_spacing = ideal_spacing
+        best_diff = float('inf')
+        
+        # Test spacing values around the ideal
+        for test_spacing in range(max(1, ideal_spacing - 20), ideal_spacing + 21):
+            if test_spacing <= 0:
+                continue
+                
+            # Count how many valid points we'd get with this spacing
+            count = 0
+            for y in range(0, h, test_spacing):
+                for x in range(0, w, test_spacing):
+                    if y < h and x < w and mask[y, x]:
+                        count += 1
+                    if count >= max_points:
+                        break
+                if count >= max_points:
+                    break
+            
+            # Check if this spacing gives us closer to the desired number
+            diff = abs(count - max_points)
+            if diff < best_diff:
+                best_diff = diff
+                best_spacing = test_spacing
+        
+        # Now sample points using the best spacing
+        pts = []
+        for y in range(0, h, best_spacing):
+            for x in range(0, w, best_spacing):
+                if y < h and x < w and mask[y, x]:
+                    pts.append((x, y))
+                if len(pts) >= max_points:
+                    break
+            if len(pts) >= max_points:
+                break
+        
+        # pad with invalid points if we don't have enough
+        while len(pts) < max_points:
+            pts.append((-1, -1))
+        
+        return pts[:max_points]
+    
+    def _sample_boundary_points(self, mask: torch.Tensor, n_points: int):
+        """Sample points from the boundary of the mask."""
+        from torch.nn.functional import max_pool2d
+
+        # detect boundary
+        mask_float = mask.float().unsqueeze(0).unsqueeze(0)
+        dil = max_pool2d(mask_float, 3, stride=1, padding=1)
+        boundary = (dil - mask_float).squeeze().bool()
+
+        ys, xs = torch.nonzero(boundary, as_tuple=True)
+        pts = []
+        if len(xs) > 0:
+            idxs = torch.randperm(len(xs))[:n_points]
+            for i in idxs:
+                pts.append((int(xs[i]), int(ys[i])))
+        
+        # pad with invalid points if we don't have enough
+        while len(pts) < n_points:
+            pts.append((-1, -1))
+        
+        return pts[:n_points]
+    
+    def _sample_poisson_points(self, mask: torch.Tensor, max_points: int):
+        """Sample points using Poisson disk sampling for better distribution."""
+        ys, xs = torch.nonzero(mask, as_tuple=True)
+        if len(xs) == 0:
+            return [(-1, -1)] * max_points
+            
+        coords = np.stack([xs.numpy(), ys.numpy()], axis=1)
+        np.random.shuffle(coords)
+        pts = []
+
+        for (x, y) in coords:
+            if all((x - px)**2 + (y - py)**2 > self.poisson_min_dist**2 for px, py in pts):
+                pts.append((int(x), int(y)))
+            if len(pts) >= max_points:
+                break
+        
+        # pad with invalid points if we don't have enough
+        while len(pts) < max_points:
+            pts.append((-1, -1))
+        
+        return pts[:max_points]
     
     @staticmethod
     def _square_erode(mask_2d: torch.Tensor, radius: int) -> torch.Tensor: 
@@ -158,14 +278,19 @@ def make_ph2_loaders(
     num_workers: int = 0,
     img_transform=None,
     mask_transform=None,
+    sampling_method: str = "random",
+    poisson_min_dist: int = 30,
 ):
     from torch.utils.data import DataLoader
     train_ds = PH2Dataset(root_dir, split="train", val_ratio=val_ratio,test_ratio=test_ratio, seed=seed,
-                          transform_img=img_transform, transform_mask=mask_transform)
+                          transform_img=img_transform, transform_mask=mask_transform,
+                          sampling_method=sampling_method, poisson_min_dist=poisson_min_dist)
     val_ds = PH2Dataset(root_dir, split="val", val_ratio=val_ratio,test_ratio=test_ratio, seed=seed,
-                        transform_img=img_transform, transform_mask=mask_transform)
+                        transform_img=img_transform, transform_mask=mask_transform,
+                        sampling_method=sampling_method, poisson_min_dist=poisson_min_dist)
     test_ds = PH2Dataset(root_dir, split="test", val_ratio=val_ratio,test_ratio=test_ratio, seed=seed,
-                            transform_img=img_transform, transform_mask=mask_transform)
+                            transform_img=img_transform, transform_mask=mask_transform,
+                            sampling_method=sampling_method, poisson_min_dist=poisson_min_dist)
     
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
                               num_workers=num_workers, pin_memory=True)
