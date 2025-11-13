@@ -1,0 +1,30 @@
+[PH2][01] train=0.3977  val=0.3605  val_Dice=0.8044
+[PH2][02] train=0.3735  val=0.3310  val_Dice=0.8275
+[PH2][03] train=0.3856  val=0.3834  val_Dice=0.8314
+[PH2][04] train=0.3529  val=0.3436  val_Dice=0.8344
+[PH2][05] train=0.3361  val=0.3443  val_Dice=0.8273
+[PH2][06] train=0.3203  val=0.3644  val_Dice=0.8106
+[PH2][07] train=0.3764  val=0.3827  val_Dice=0.8177
+[PH2][08] train=0.3299  val=0.3806  val_Dice=0.8231
+[PH2][09] train=0.3547  val=0.5914  val_Dice=0.7562
+[PH2][10] train=0.3271  val=0.4109  val_Dice=0.8253
+FINAL:
+  train: Dice=0.842 IoU=0.750 Acc=0.869 Sen=0.811 Spec=0.927
+  val  : Dice=0.834 IoU=0.732 Acc=0.870 Sen=0.828 Spec=0.899
+  test : Dice=0.830 IoU=0.738 Acc=0.876 Sen=0.848 Spec=0.887
+Saved 40 images to: test_ph2_unet
+[DRIVE][01] train=0.5415  val=3.0526  val_Dice=0.1574
+[DRIVE][02] train=0.4143  val=2.1955  val_Dice=0.1574
+[DRIVE][03] train=0.3713  val=0.4776  val_Dice=0.0941
+[DRIVE][04] train=0.3277  val=0.3852  val_Dice=0.0026
+[DRIVE][05] train=0.2969  val=0.3436  val_Dice=0.0099
+[DRIVE][06] train=0.2604  val=0.3099  val_Dice=0.1115
+[DRIVE][07] train=0.2392  val=0.3015  val_Dice=0.2295
+[DRIVE][08] train=0.2231  val=0.2569  val_Dice=0.3814
+[DRIVE][09] train=0.2043  val=0.2399  val_Dice=0.4331
+[DRIVE][10] train=0.1926  val=0.2343  val_Dice=0.4757
+Best checkpoint:
+  train: Dice=0.681 IoU=0.518 Acc=0.950 Sen=0.643 Spec=0.979
+  val  : Dice=0.476 IoU=0.326 Acc=0.927 Sen=0.408 Spec=0.975
+  test : Dice=0.506 IoU=0.354 Acc=0.928 Sen=0.418 Spec=0.978
+Saved 4 images to: test_drive_unet
