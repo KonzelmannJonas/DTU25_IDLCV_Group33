@@ -430,7 +430,7 @@ plt.close()
 # click annotations, training loop
 print("Started training")
 for epoch in range(10):
-    tr_loss = train_one_epoch_point_supervision(model2, train_loader_PH2, optimizer2, device)
+    tr_loss = train_one_epoch_point_supervision(model2, train_loader_PH2, optimizer, device)
     va_loss, va_m = eval_epoch_point_supervision(model2, val_loader_PH2, device)
     print(f"{train_ds.clicks_pos} {SAMPLING_METHOD} clicks:"
           f"[PH2][{epoch+1:02d}] "

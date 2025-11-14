@@ -1,0 +1,44 @@
+10 grid clicks:[PH2][01] train_loss=0.1155  val_loss=0.1455 | val: Dice=0.610 IoU=0.490 Acc=0.591 Sen=0.858 Spec=0.475
+10 grid clicks:[PH2][02] train_loss=0.0777  val_loss=0.1086 | val: Dice=0.729 IoU=0.613 Acc=0.776 Sen=0.848 Spec=0.766
+10 grid clicks:[PH2][03] train_loss=0.0512  val_loss=0.0815 | val: Dice=0.796 IoU=0.686 Acc=0.834 Sen=0.854 Spec=0.844
+10 grid clicks:[PH2][04] train_loss=0.0854  val_loss=0.0578 | val: Dice=0.781 IoU=0.665 Acc=0.828 Sen=0.822 Spec=0.842
+10 grid clicks:[PH2][05] train_loss=0.0831  val_loss=0.0970 | val: Dice=0.765 IoU=0.644 Acc=0.828 Sen=0.792 Spec=0.861
+10 grid clicks:[PH2][06] train_loss=0.0766  val_loss=0.0656 | val: Dice=0.775 IoU=0.662 Acc=0.829 Sen=0.851 Spec=0.801
+10 grid clicks:[PH2][07] train_loss=0.0632  val_loss=0.0639 | val: Dice=0.794 IoU=0.684 Acc=0.847 Sen=0.804 Spec=0.887
+10 grid clicks:[PH2][08] train_loss=0.0503  val_loss=0.0867 | val: Dice=0.807 IoU=0.703 Acc=0.846 Sen=0.870 Spec=0.827
+10 grid clicks:[PH2][09] train_loss=0.0872  val_loss=0.0850 | val: Dice=0.652 IoU=0.520 Acc=0.699 Sen=0.865 Spec=0.620
+10 grid clicks:[PH2][10] train_loss=0.0649  val_loss=0.0789 | val: Dice=0.726 IoU=0.607 Acc=0.762 Sen=0.892 Spec=0.685
+{'dice': 0.7468257337808609, 'iou': 0.6367303252220153, 'acc': 0.7576816558837891, 'sen': 0.8870941221714019, 'spe': 0.646404730901122}
+10 boundary clicks:[PH2][01] train_loss=0.4608  val_loss=0.4264 | val: Dice=0.831 IoU=0.728 Acc=0.871 Sen=0.856 Spec=0.885
+10 boundary clicks:[PH2][02] train_loss=0.4223  val_loss=0.3555 | val: Dice=0.820 IoU=0.720 Acc=0.854 Sen=0.843 Spec=0.866
+10 boundary clicks:[PH2][03] train_loss=0.3772  val_loss=0.3355 | val: Dice=0.832 IoU=0.730 Acc=0.865 Sen=0.844 Spec=0.886
+10 boundary clicks:[PH2][04] train_loss=0.3897  val_loss=0.3668 | val: Dice=0.807 IoU=0.708 Acc=0.835 Sen=0.927 Spec=0.767
+10 boundary clicks:[PH2][05] train_loss=0.3469  val_loss=0.2888 | val: Dice=0.832 IoU=0.727 Acc=0.883 Sen=0.810 Spec=0.940
+10 boundary clicks:[PH2][06] train_loss=0.3955  val_loss=0.3417 | val: Dice=0.808 IoU=0.702 Acc=0.846 Sen=0.839 Spec=0.856
+10 boundary clicks:[PH2][07] train_loss=0.3643  val_loss=0.3352 | val: Dice=0.827 IoU=0.725 Acc=0.860 Sen=0.871 Spec=0.860
+10 boundary clicks:[PH2][08] train_loss=0.3206  val_loss=0.3305 | val: Dice=0.801 IoU=0.697 Acc=0.844 Sen=0.862 Spec=0.835
+10 boundary clicks:[PH2][09] train_loss=0.3364  val_loss=0.3975 | val: Dice=0.766 IoU=0.656 Acc=0.802 Sen=0.864 Spec=0.775
+10 boundary clicks:[PH2][10] train_loss=0.3447  val_loss=0.3759 | val: Dice=0.804 IoU=0.696 Acc=0.849 Sen=0.800 Spec=0.893
+{'dice': 0.8230101555585861, 'iou': 0.7288209676742554, 'acc': 0.8517610549926757, 'sen': 0.8491520881652832, 'spe': 0.8546859145164489}
+10 random clicks:[PH2][01] train_loss=0.4600  val_loss=0.4471 | val: Dice=0.768 IoU=0.654 Acc=0.806 Sen=0.805 Spec=0.848
+10 random clicks:[PH2][02] train_loss=0.3930  val_loss=0.3244 | val: Dice=0.805 IoU=0.702 Acc=0.832 Sen=0.867 Spec=0.836
+10 random clicks:[PH2][03] train_loss=0.3757  val_loss=0.3222 | val: Dice=0.793 IoU=0.679 Acc=0.844 Sen=0.781 Spec=0.920
+10 random clicks:[PH2][04] train_loss=0.3036  val_loss=0.3877 | val: Dice=0.810 IoU=0.710 Acc=0.830 Sen=0.889 Spec=0.816
+10 random clicks:[PH2][05] train_loss=0.3821  val_loss=0.2932 | val: Dice=0.807 IoU=0.701 Acc=0.843 Sen=0.806 Spec=0.903
+10 random clicks:[PH2][06] train_loss=0.3469  val_loss=0.3735 | val: Dice=0.801 IoU=0.694 Acc=0.846 Sen=0.800 Spec=0.895
+10 random clicks:[PH2][07] train_loss=0.3059  val_loss=0.3256 | val: Dice=0.794 IoU=0.694 Acc=0.810 Sen=0.923 Spec=0.756
+10 random clicks:[PH2][08] train_loss=0.3383  val_loss=0.2991 | val: Dice=0.840 IoU=0.742 Acc=0.866 Sen=0.868 Spec=0.885
+10 random clicks:[PH2][09] train_loss=0.3628  val_loss=0.3201 | val: Dice=0.837 IoU=0.738 Acc=0.865 Sen=0.858 Spec=0.887
+10 random clicks:[PH2][10] train_loss=0.3461  val_loss=0.3438 | val: Dice=0.813 IoU=0.716 Acc=0.837 Sen=0.911 Spec=0.804
+{'dice': 0.8352298438549042, 'iou': 0.7518779829144477, 'acc': 0.8343182563781738, 'sen': 0.9400280952453614, 'spe': 0.7550270535051823}
+10 poisson clicks:[PH2][01] train_loss=0.4462  val_loss=0.3854 | val: Dice=0.801 IoU=0.693 Acc=0.829 Sen=0.863 Spec=0.824
+10 poisson clicks:[PH2][02] train_loss=0.3836  val_loss=0.3239 | val: Dice=0.811 IoU=0.700 Acc=0.849 Sen=0.799 Spec=0.899
+10 poisson clicks:[PH2][03] train_loss=0.3581  val_loss=0.4047 | val: Dice=0.795 IoU=0.695 Acc=0.816 Sen=0.919 Spec=0.758
+10 poisson clicks:[PH2][04] train_loss=0.4022  val_loss=0.3972 | val: Dice=0.821 IoU=0.724 Acc=0.845 Sen=0.853 Spec=0.862
+10 poisson clicks:[PH2][05] train_loss=0.3729  val_loss=0.3858 | val: Dice=0.831 IoU=0.734 Acc=0.856 Sen=0.876 Spec=0.855
+10 poisson clicks:[PH2][06] train_loss=0.3302  val_loss=0.3292 | val: Dice=0.829 IoU=0.733 Acc=0.854 Sen=0.890 Spec=0.844
+10 poisson clicks:[PH2][07] train_loss=0.3373  val_loss=0.3130 | val: Dice=0.820 IoU=0.725 Acc=0.836 Sen=0.907 Spec=0.807
+10 poisson clicks:[PH2][08] train_loss=0.3287  val_loss=0.3562 | val: Dice=0.809 IoU=0.713 Acc=0.824 Sen=0.939 Spec=0.760
+10 poisson clicks:[PH2][09] train_loss=0.2824  val_loss=0.3578 | val: Dice=0.829 IoU=0.739 Acc=0.845 Sen=0.929 Spec=0.798
+10 poisson clicks:[PH2][10] train_loss=0.3440  val_loss=0.2979 | val: Dice=0.833 IoU=0.740 Acc=0.854 Sen=0.904 Spec=0.828
+{'dice': 0.8441938638687134, 'iou': 0.7635548129677773, 'acc': 0.8403543472290039, 'sen': 0.9376520425081253, 'spe': 0.7778014693409204}
