@@ -17,8 +17,7 @@ model2 = UNet(in_ch=3, out_ch=1, base_ch=64, depth=4).to(device)
 criterion = nn.BCEWithLogitsLoss()
 
 optimizer = optim.Adam(model.parameters(), lr=1e-3)
-optimizer2 = optim.Adam(model2.parameters(), lr=1e-4)
-
+optimizer2 = optim.Adam(model2.parameters(), lr=1e-3)
 
 def train_one_epoch(model, loader, optimizer, criterion, device, threshold=0.5):
     model.train()
@@ -196,12 +195,10 @@ def save_all_preds(model, loader, device, out_dir="preds", threshold=0.5):
 
 # UNET --------------------
 
-# Transform PH2 to 512x512
+# Transform DRIVE to 512x512
 img_trans = T.Compose([
     T.Resize((512, 512)),
     T.ToTensor(),
-    # T.Normalize(mean=[0.485, 0.456, 0.406],
-    #             std =[0.229, 0.224, 0.225])
 ])
 
 mask_trans = T.Compose([
@@ -213,6 +210,7 @@ mask_trans = T.Compose([
 
 # Load UNET
 
+# PH2 is already cropped to 512x512
 train_loader_PH2, val_loader_PH2,test_loader_PH2 = make_ph2_loaders(
     root_dir="/dtu/datasets1/02516/PH2_Dataset_images",
     batch_size=2,
@@ -220,7 +218,7 @@ train_loader_PH2, val_loader_PH2,test_loader_PH2 = make_ph2_loaders(
     mask_transform=None
 )
 
-# DRIVE is already cropped to 512x512
+
 train_loader_DRIVE, val_loader_DRIVE,test_loader_DRIVE = make_drive_loaders(
     root_dir="/dtu/datasets1/02516/DRIVE",
     batch_size=2,
@@ -231,47 +229,84 @@ train_loader_DRIVE, val_loader_DRIVE,test_loader_DRIVE = make_drive_loaders(
 
 # # UNET PH2
 
-for epoch in range(10):
-    tr_loss, tr_m = train_one_epoch(model2, train_loader_PH2, optimizer2, criterion, device)
-    va_loss, va_m = eval_epoch(model2, val_loader_PH2, criterion, device)
-    print(f"[PH2][{epoch+1:02d}] "
-          f"train_loss={tr_loss:.4f}  val_loss={va_loss:.4f} | "
-          f"train: Dice={tr_m['dice']:.3f} IoU={tr_m['iou']:.3f} Acc={tr_m['acc']:.3f} Sen={tr_m['sen']:.3f} Spec={tr_m['spe']:.3f} | "
-          f"val: Dice={va_m['dice']:.3f} IoU={va_m['iou']:.3f} Acc={va_m['acc']:.3f} Sen={va_m['sen']:.3f} Spec={va_m['spe']:.3f}")
+# best_dice, best_state = -1.0, None
+
+# for epoch in range(10):
+#     tr_loss, tr_m = train_one_epoch(model2, train_loader_PH2, optimizer2, criterion, device)
+#     va_loss, va_m = eval_epoch(model2,  val_loader_PH2,  criterion, device)
+
+#     print(f"[PH2][{epoch+1:02d}] train={tr_loss:.4f}  val={va_loss:.4f}  val_Dice={va_m['dice']:.4f}")
+
+#     # checkpoint on best validation Dice
+#     if va_m['dice'] > best_dice:
+#         best_dice = va_m['dice']
+#         best_state = {k: v.detach().cpu() for k, v in model2.state_dict().items()}
+
+# # reload best checkpoint
+# model2.load_state_dict({k: v.to(device) for k, v in best_state.items()})
+
+# # summary on all splits (same averaging as eval_epoch)
+# tr_loss, tr_m = eval_epoch(model2, train_loader_PH2, criterion, device)
+# va_loss, va_m = eval_epoch(model2,   val_loader_PH2, criterion, device)
+# te_loss, te_m = eval_epoch(model2,  test_loader_PH2, criterion, device)
+
+# def fmt(m): return f"Dice={m['dice']:.3f} IoU={m['iou']:.3f} Acc={m['acc']:.3f} Sen={m['sen']:.3f} Spec={m['spe']:.3f}"
+# print("FINAL:")
+# print("  train:", fmt(tr_m))
+# print("  val  :", fmt(va_m))
+# print("  test :", fmt(te_m))
+
+# #for visual inspection, save predictions on test set
+# save_all_preds(model2, test_loader_PH2, device, out_dir="test_ph2_unet", threshold=0.5)
 
 
-metrics = test_epoch(model2, test_loader_PH2, device, threshold=0.5)
-print(metrics) 
+# # UNET DRIVE
 
-#for visual inspection, save predictions on test set
-save_all_preds(model2, test_loader_PH2, device, out_dir="test_ph2_unet", threshold=0.5)
+# model3 = UNet(in_ch=3, out_ch=1, base_ch=64, depth=4).to(device)
+# optimizer3 = optim.Adam(model3.parameters(), lr=1e-3)
 
-# UNET DRIVE
+# best_dice, best_state = -1.0, None
+# thresh = 0.25 # Smaller threshold helps with veins
 
-for epoch in range(10):
-    tr_loss, tr_m = train_one_epoch(model2, train_loader_DRIVE, optimizer2, criterion, device)
-    va_loss, va_m = eval_epoch(model2, val_loader_DRIVE, criterion, device)
-    print(f"[DRIVE][{epoch+1:02d}] "
-          f"train_loss={tr_loss:.4f}  val_loss={va_loss:.4f} | "
-          f"train: Dice={tr_m['dice']:.3f} IoU={tr_m['iou']:.3f} Acc={tr_m['acc']:.3f} Sen={tr_m['sen']:.3f} Spec={tr_m['spe']:.3f} | "
-          f"val: Dice={va_m['dice']:.3f} IoU={va_m['iou']:.3f} Acc={va_m['acc']:.3f} Sen={va_m['sen']:.3f} Spec={va_m['spe']:.3f}")
+# for epoch in range(10):
+#     tr_loss, tr_m = train_one_epoch(model3, train_loader_DRIVE, optimizer3, criterion, device, threshold=thresh)
+#     va_loss, va_m = eval_epoch(model3,  val_loader_DRIVE,  criterion, device, threshold=thresh)
+
+#     print(f"[DRIVE][{epoch+1:02d}] train={tr_loss:.4f}  val={va_loss:.4f}  val_Dice={va_m['dice']:.4f}")
+
+#     # checkpoint on best validation Dice
+#     if va_m['dice'] > best_dice:
+#         best_dice = va_m['dice']
+#         best_state = {k: v.detach().cpu() for k, v in model3.state_dict().items()}
+
+# # reload best checkpoint
+# model3.load_state_dict({k: v.to(device) for k, v in best_state.items()})
 
 
-metrics = test_epoch(model2, test_loader_DRIVE, device, threshold=0.5)
-print(metrics) 
 
-#for visual inspection, save predictions on test set
-save_all_preds(model2, test_loader_DRIVE, device, out_dir="test_drive_unet", threshold=0.5)
+# # summary on all splits
+# tr_loss, tr_m = eval_epoch(model3, train_loader_DRIVE, criterion, device, threshold=thresh)
+# va_loss, va_m = eval_epoch(model3,   val_loader_DRIVE, criterion, device, threshold=thresh)
+# te_loss, te_m = eval_epoch(model3,  test_loader_DRIVE, criterion, device, threshold=thresh)
+
+# def fmt(m): return f"Dice={m['dice']:.3f} IoU={m['iou']:.3f} Acc={m['acc']:.3f} Sen={m['sen']:.3f} Spec={m['spe']:.3f}"
+# print("Best checkpoint:")
+# print("  train:", fmt(tr_m))
+# print("  val  :", fmt(va_m))
+# print("  test :", fmt(te_m))
+
+# #for visual inspection, save predictions on test set
+# save_all_preds(model3, test_loader_DRIVE, device, out_dir="test_drive_unet", threshold=thresh)
 
 
-# # Ablation -------------
+# Ablation -------------
 
-# new_unet = lambda: UNet(in_ch=3, out_ch=1, base_ch=64, depth=4)
+new_unet = lambda: UNet(in_ch=3, out_ch=1, base_ch=64, depth=4)
 
-# # PH2
-# ph2_results = run_ablation("PH2",(train_loader_PH2, val_loader_PH2, test_loader_PH2),
-#     device, new_unet, train_one_epoch, eval_epoch, epochs=10, lr=1e-3)
+# PH2
+ph2_results = run_ablation("PH2",(train_loader_PH2, val_loader_PH2, test_loader_PH2),
+    device, new_unet, train_one_epoch, eval_epoch, epochs=10, lr=1e-3, threshold=0.5)
 
-# # DRIVE
-# drive_results = run_ablation("DRIVE", (train_loader_DRIVE, val_loader_DRIVE, test_loader_DRIVE),
-#     device, new_unet, train_one_epoch, eval_epoch, epochs=10, lr=1e-3)
+# DRIVE
+drive_results = run_ablation("DRIVE", (train_loader_DRIVE, val_loader_DRIVE, test_loader_DRIVE),
+    device, new_unet, train_one_epoch, eval_epoch, epochs=10, lr=1e-3, threshold=0.25)
