@@ -269,3 +269,5 @@ if __name__ == "__main__":
     test_loss, test_acc = evaluate(model, test_loader, criterion, device)
     print(f"Test Loss: {test_loss:.4f} | Test Acc: {test_acc:.4f}")
 
+
+    plot_training_curves(train_losses, val_losses, train_accs, val_accs)

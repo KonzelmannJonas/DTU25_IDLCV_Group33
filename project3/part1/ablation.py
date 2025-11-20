@@ -50,6 +50,7 @@ def run_ablation(
     eval_epoch,                            
     epochs: int = 10,
     lr: float = 1e-3,
+    threshold: float = 0.5,
 ):
     train_loader, val_loader, test_loader = loaders
     results = {}
@@ -72,8 +73,8 @@ def run_ablation(
         best_state = None
 
         for epoch in range(1, epochs + 1):
-            tr_loss, tr_m = train_one_epoch(model, train_loader, optimizer, criterion, device)
-            va_loss, va_m = eval_epoch(model, val_loader, criterion, device)
+            tr_loss, tr_m = train_one_epoch(model, train_loader, optimizer, criterion, device, threshold=threshold)
+            va_loss, va_m = eval_epoch(model, val_loader, criterion, device, threshold=threshold)
             print(f"[{epoch:02d}] train={tr_loss:.4f}  val={va_loss:.4f}  val_Dice={va_m['dice']:.4f}")
             if va_m["dice"] > best_dice:
                 best_dice = va_m["dice"]
@@ -81,9 +82,9 @@ def run_ablation(
 
         # Evaluate best on all splits
         model.load_state_dict({k: v.to(device) for k, v in best_state.items()})
-        tr_loss, tr_m = eval_epoch(model, train_loader, criterion, device)
-        va_loss, va_m = eval_epoch(model,   val_loader, criterion, device)
-        te_loss, te_m = eval_epoch(model,  test_loader, criterion, device)
+        tr_loss, tr_m = eval_epoch(model, train_loader, criterion, device, threshold=threshold)
+        va_loss, va_m = eval_epoch(model,   val_loader, criterion, device, threshold=threshold)
+        te_loss, te_m = eval_epoch(model,  test_loader, criterion, device, threshold=threshold)
 
         results[loss_name] = {"train": tr_m, "val": va_m, "test": te_m}
 
