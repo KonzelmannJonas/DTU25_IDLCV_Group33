@@ -14,7 +14,7 @@ VAL_STEMS := potholes3
 TEST_STEMS := potholes3
 
 MODEL := simple
-EPOCHS := 20
+EPOCHS := 10
 BATCH_SIZE := 32
 LR := 0.001
 RESIZE := 64
@@ -81,6 +81,7 @@ predict:
 	python predict.py \
 		--images-dir $(IMAGES_DIR) \
 		--proposals-dir $(PROPOSALS_DIR) \
+		--annotations-dir $(ANNOTATIONS_DIR) \
 		--checkpoint $(OUTPUT_DIR)/checkpoints/best_model.pth \
 		--splits $(SPLITS_FILE) \
 		--model $(MODEL) \
@@ -94,14 +95,14 @@ visualize:
 	python predict.py \
 		--images-dir $(IMAGES_DIR) \
 		--proposals-dir $(PROPOSALS_DIR) \
+		--annotations-dir $(ANNOTATIONS_DIR) \
 		--checkpoint $(OUTPUT_DIR)/checkpoints/best_model.pth \
 		--splits $(SPLITS_FILE) \
 		--model $(MODEL) \
 		--resize $(RESIZE) \
 		--conf-threshold $(CONF_THRESHOLD) \
 		--nms-threshold $(NMS_THRESHOLD) \
-		--output-dir $(OUTPUT_DIR)/predictions \
-		--visualize
+		--output-dir $(OUTPUT_DIR)/predictions
 
 test-model:
 	@echo "Testing model architecture..."

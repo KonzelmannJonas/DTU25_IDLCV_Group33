@@ -58,6 +58,32 @@ def parse_proposals_xml(xml_path: Path) -> Tuple[str, int, int, List[Tuple[int, 
     return filename, W, H, boxes
 
 
+def parse_ground_truth_xml(xml_path: Path) -> List[Tuple[int, int, int, int]]:
+    """Parse ground truth annotation XML file."""
+    if not xml_path.exists():
+        return []
+    
+    root = ET.parse(xml_path).getroot()
+    boxes = []
+    
+    for obj in root.findall('object'):
+        name = obj.findtext('name', '')
+        if name.lower() != 'pothole':
+            continue
+        
+        bb = obj.find('bndbox')
+        if bb is None:
+            continue
+        
+        xmin = int(float(bb.findtext('xmin', '0')))
+        ymin = int(float(bb.findtext('ymin', '0')))
+        xmax = int(float(bb.findtext('xmax', '0')))
+        ymax = int(float(bb.findtext('ymax', '0')))
+        boxes.append((xmin, ymin, xmax, ymax))
+    
+    return boxes
+
+
 def extract_crop(
     img: np.ndarray,
     bbox: Tuple[int, int, int, int],
@@ -197,6 +223,114 @@ def visualize_predictions(
     return vis
 
 
+def visualize_comparison(
+    img: np.ndarray,
+    predictions: List[Tuple[Tuple[int, int, int, int], float]],
+    ground_truth: List[Tuple[int, int, int, int]],
+    pred_color: Tuple[int, int, int] = (0, 255, 0),  # Green
+    gt_color: Tuple[int, int, int] = (255, 0, 0),     # Blue (BGR format)
+    thickness: int = 2,
+) -> np.ndarray:
+    """Draw both predictions and ground truth boxes on image."""
+    vis = img.copy()
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.5
+    font_thickness = 1
+    
+    # Draw ground truth boxes (blue)
+    for bbox in ground_truth:
+        x1, y1, x2, y2 = bbox
+        cv2.rectangle(vis, (x1, y1), (x2, y2), gt_color, thickness)
+        
+        # Draw label
+        label = 'GT'
+        (tw, th), _ = cv2.getTextSize(label, font, font_scale, font_thickness)
+        ty = max(0, y1 - 4)
+        cv2.rectangle(vis, (x1, ty - th - 4), (x1 + tw + 4, ty), gt_color, -1)
+        cv2.putText(vis, label, (x1 + 2, ty - 4), font, font_scale, (255, 255, 255), font_thickness, cv2.LINE_AA)
+    
+    # Draw predictions (green)
+    for bbox, score in predictions:
+        x1, y1, x2, y2 = bbox
+        cv2.rectangle(vis, (x1, y1), (x2, y2), pred_color, thickness)
+        
+        # Draw label
+        label = f'Pred: {score:.2f}'
+        (tw, th), _ = cv2.getTextSize(label, font, font_scale, font_thickness)
+        ty = max(0, y2 + th + 4)
+        cv2.rectangle(vis, (x1, y2), (x1 + tw + 4, ty + 4), pred_color, -1)
+        cv2.putText(vis, label, (x1 + 2, y2 + th + 2), font, font_scale, (0, 0, 0), font_thickness, cv2.LINE_AA)
+    
+    return vis
+
+
+def compute_detection_metrics(
+    predictions: List[Tuple[Tuple[int, int, int, int], float]],
+    ground_truth: List[Tuple[int, int, int, int]],
+    iou_threshold: float = 0.5,
+) -> Dict[str, float]:
+    """
+    Compute detection metrics (precision, recall, F1) based on IoU matching.
+    
+    Args:
+        predictions: List of (bbox, confidence) tuples
+        ground_truth: List of ground truth bboxes
+        iou_threshold: IoU threshold for considering a match
+    
+    Returns:
+        Dictionary with TP, FP, FN, precision, recall, F1, and average IoU
+    """
+    pred_boxes = [p[0] for p in predictions]
+    
+    # Track which GT boxes have been matched
+    gt_matched = [False] * len(ground_truth)
+    pred_matched = [False] * len(pred_boxes)
+    
+    true_positives = 0
+    total_iou = 0.0
+    
+    # For each prediction, find best matching GT box
+    for pred_idx, pred_box in enumerate(pred_boxes):
+        best_iou = 0.0
+        best_gt_idx = -1
+        
+        for gt_idx, gt_box in enumerate(ground_truth):
+            if gt_matched[gt_idx]:
+                continue
+            
+            iou = compute_iou(pred_box, gt_box)
+            if iou > best_iou:
+                best_iou = iou
+                best_gt_idx = gt_idx
+        
+        # If best IoU exceeds threshold, it's a match
+        if best_iou >= iou_threshold and best_gt_idx >= 0:
+            true_positives += 1
+            total_iou += best_iou
+            gt_matched[best_gt_idx] = True
+            pred_matched[pred_idx] = True
+    
+    false_positives = len(pred_boxes) - true_positives
+    false_negatives = len(ground_truth) - true_positives
+    
+    precision = true_positives / max(1, len(pred_boxes))
+    recall = true_positives / max(1, len(ground_truth)) if len(ground_truth) > 0 else 0.0
+    f1 = 2 * precision * recall / max(1e-6, precision + recall)
+    avg_iou = total_iou / max(1, true_positives)
+    
+    return {
+        'TP': true_positives,
+        'FP': false_positives,
+        'FN': false_negatives,
+        'precision': precision,
+        'recall': recall,
+        'f1': f1,
+        'avg_iou': avg_iou,
+        'num_predictions': len(pred_boxes),
+        'num_ground_truth': len(ground_truth),
+    }
+
+
 def predict_image(
     img_path: Path,
     proposals: List[Tuple[int, int, int, int]],
@@ -262,6 +396,7 @@ def main():
     # Data arguments
     parser.add_argument('--images-dir', required=True, help='Directory with images')
     parser.add_argument('--proposals-dir', required=True, help='Directory with proposal XMLs')
+    parser.add_argument('--annotations-dir', default=None, help='Directory with ground truth annotations')
     parser.add_argument('--splits', default='splits.json', help='JSON file with train/test splits')
     
     # Model arguments
@@ -272,6 +407,7 @@ def main():
     # Inference arguments
     parser.add_argument('--conf-threshold', type=float, default=0.5, help='Confidence threshold for detections')
     parser.add_argument('--nms-threshold', type=float, default=0.3, help='NMS IoU threshold')
+    parser.add_argument('--iou-threshold', type=float, default=0.5, help='IoU threshold for detection matching')
     
     # Output arguments
     parser.add_argument('--output-dir', required=True, help='Directory to save predictions')
@@ -286,9 +422,21 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    if args.visualize:
-        vis_dir = output_dir / 'visualizations'
-        vis_dir.mkdir(parents=True, exist_ok=True)
+    vis_dir = output_dir / 'visualizations'
+    vis_dir.mkdir(parents=True, exist_ok=True)
+    
+    comparison_dir = output_dir / 'comparisons'
+    comparison_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Check if annotations directory is provided
+    annotations_dir = None
+    if args.annotations_dir:
+        annotations_dir = Path(args.annotations_dir)
+        if not annotations_dir.exists():
+            print(f"Warning: Annotations directory not found: {annotations_dir}")
+            annotations_dir = None
+        else:
+            print(f"Ground truth annotations: {annotations_dir}")
     
     # Load splits
     print(f"\nLoading splits from {args.splits}...")
@@ -321,6 +469,13 @@ def main():
     print(f"\nProcessing {len(test_stems)} test images...")
     
     all_results = {}
+    overall_metrics = {
+        'TP': 0,
+        'FP': 0,
+        'FN': 0,
+        'total_iou': 0.0,
+        'num_matched': 0,
+    }
     
     for stem in test_stems:
         # Find image
@@ -358,21 +513,48 @@ def main():
         
         print(f"  → {len(detections)} detections after NMS")
         
+        # Load ground truth if available
+        ground_truth = []
+        metrics = None
+        if annotations_dir:
+            gt_xml = annotations_dir / f"{stem}.xml"
+            if gt_xml.exists():
+                ground_truth = parse_ground_truth_xml(gt_xml)
+                print(f"  Ground truth: {len(ground_truth)} potholes")
+                
+                # Compute metrics
+                metrics = compute_detection_metrics(detections, ground_truth, args.iou_threshold)
+                print(f"  Metrics: P={metrics['precision']:.3f} R={metrics['recall']:.3f} "
+                      f"F1={metrics['f1']:.3f} IoU={metrics['avg_iou']:.3f}")
+                
+                # Update overall metrics
+                overall_metrics['TP'] += metrics['TP']
+                overall_metrics['FP'] += metrics['FP']
+                overall_metrics['FN'] += metrics['FN']
+                if metrics['TP'] > 0:
+                    overall_metrics['total_iou'] += metrics['avg_iou'] * metrics['TP']
+                    overall_metrics['num_matched'] += metrics['TP']
+        
         # Save predictions XML
         pred_xml = output_dir / f"{stem}_predictions.xml"
         write_predictions_xml(pred_xml, filename, W or 0, H or 0, detections)
         print(f"  Saved: {pred_xml.name}")
         
-        # Visualize if requested
-        if args.visualize:
-            img = cv2.imread(str(img_path))
-            vis = visualize_predictions(img, detections)
-            vis_path = vis_dir / f"{stem}_detections.png"
-            cv2.imwrite(str(vis_path), vis)
-            print(f"  Visualization: {vis_path.name}")
+        # Always visualize predictions
+        img = cv2.imread(str(img_path))
+        vis = visualize_predictions(img, detections)
+        vis_path = vis_dir / f"{stem}_detections.png"
+        cv2.imwrite(str(vis_path), vis)
+        
+        # If ground truth available, create comparison visualization
+        if len(ground_truth) > 0:
+            comp_vis = visualize_comparison(img, detections, ground_truth)
+            comp_path = comparison_dir / f"{stem}_comparison.png"
+            cv2.imwrite(str(comp_path), comp_vis)
+            print(f"  Comparison: {comp_path.name}")
         
         # Store results
-        all_results[stem] = {
+        result_entry = {
             'num_proposals': len(proposals),
             'num_detections': len(detections),
             'detections': [
@@ -380,12 +562,61 @@ def main():
                 for bbox, score in detections
             ]
         }
+        
+        if metrics:
+            result_entry['metrics'] = {
+                'precision': metrics['precision'],
+                'recall': metrics['recall'],
+                'f1': metrics['f1'],
+                'avg_iou': metrics['avg_iou'],
+                'TP': metrics['TP'],
+                'FP': metrics['FP'],
+                'FN': metrics['FN'],
+            }
+            result_entry['num_ground_truth'] = len(ground_truth)
+        
+        all_results[stem] = result_entry
+    
+    # Compute overall metrics
+    if overall_metrics['TP'] + overall_metrics['FP'] > 0:
+        overall_precision = overall_metrics['TP'] / (overall_metrics['TP'] + overall_metrics['FP'])
+        overall_recall = overall_metrics['TP'] / max(1, overall_metrics['TP'] + overall_metrics['FN'])
+        overall_f1 = 2 * overall_precision * overall_recall / max(1e-6, overall_precision + overall_recall)
+        overall_avg_iou = overall_metrics['total_iou'] / max(1, overall_metrics['num_matched'])
+        
+        print(f"\n{'='*60}")
+        print("OVERALL METRICS")
+        print('='*60)
+        print(f"Total Images: {len(all_results)}")
+        print(f"True Positives: {overall_metrics['TP']}")
+        print(f"False Positives: {overall_metrics['FP']}")
+        print(f"False Negatives: {overall_metrics['FN']}")
+        print(f"Precision: {overall_precision:.4f}")
+        print(f"Recall: {overall_recall:.4f}")
+        print(f"F1 Score: {overall_f1:.4f}")
+        print(f"Average IoU: {overall_avg_iou:.4f}")
+        
+        # Add overall metrics to summary
+        summary = {
+            'overall_metrics': {
+                'precision': overall_precision,
+                'recall': overall_recall,
+                'f1': overall_f1,
+                'avg_iou': overall_avg_iou,
+                'TP': overall_metrics['TP'],
+                'FP': overall_metrics['FP'],
+                'FN': overall_metrics['FN'],
+                'num_images': len(all_results),
+            },
+            'per_image_results': all_results,
+        }
+    else:
+        summary = {'per_image_results': all_results}
     
     # Save summary
-    import json
     summary_path = output_dir / 'predictions_summary.json'
     with open(summary_path, 'w') as f:
-        json.dump(all_results, f, indent=2)
+        json.dump(summary, f, indent=2)
     print(f"\n✓ Saved summary: {summary_path}")
     
     print(f"\n{'='*60}")
