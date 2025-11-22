@@ -218,42 +218,35 @@ def save_all_preds_point_supervision(model, loader, device, out_dir="preds", thr
             idx_global += 1
 
     print(f"Saved {idx_global} images to: {out_dir}")  
-
-
-
+    
 def point_level_loss(logits, mask, pos_xy, neg_xy):
+    """
+    Compute BCE loss at click positions.
+    Args:
+        logits: Predicted logits (B, 1, H, W).
+        mask: Ground truth mask (B, 1, H, W).
+        pos_xy: List of positive click positions for each batch.
+        neg_xy: List of negative click positions for each batch.
+    """
     bce = nn.BCEWithLogitsLoss(reduction="none")
-    losses = []
-    total_points = 0
+    loss = 0.0
 
-    for b in range(logits.size(0)):
+    for b in range(logits.size(0)):  # Iterate over batch
         pos = pos_xy[b]
         neg = neg_xy[b]
 
-        def sample_points(points):
-            if not points or points[0] == (-1, -1):
-                return torch.tensor([], device=logits.device), torch.tensor([], device=logits.device)
-            ys = [y for x, y in points if x >= 0 and y >= 0]
-            xs = [x for x, y in points if x >= 0 and y >= 0]
-            if len(xs) == 0:
-                return torch.tensor([], device=logits.device), torch.tensor([], device=logits.device)
-            return logits[b, 0, ys, xs], mask[b, 0, ys, xs]
+        # Extract logits and ground truth at click positions
+        pos_logits = logits[b, 0, [y for x, y in pos], [x for x, y in pos]]
+        neg_logits = logits[b, 0, [y for x, y in neg], [x for x, y in neg]]
+        pos_gt = mask[b, 0, [y for x, y in pos], [x for x, y in pos]]
+        neg_gt = mask[b, 0, [y for x, y in neg], [x for x, y in neg]]
 
-        pos_logits, pos_gt = sample_points(pos)
-        neg_logits, neg_gt = sample_points(neg)
+        # Compute BCE loss at click positions
+        pos_loss = bce(pos_logits, pos_gt)
+        neg_loss = bce(neg_logits, neg_gt)
+        loss += pos_loss.mean() + neg_loss.mean()
 
-        if pos_logits.numel() > 0:
-            losses.append(bce(pos_logits, pos_gt).sum())
-            total_points += pos_logits.numel()
-        if neg_logits.numel() > 0:
-            losses.append(bce(neg_logits, neg_gt).sum())
-            total_points += neg_logits.numel()
-
-    if len(losses) > 0:
-        total_loss = torch.stack(losses).sum()
-        return total_loss / total_points # we average over total points
-    else:
-        return torch.tensor(0.0, device=logits.device, requires_grad=True)
+    return loss / logits.size(0)  # Average over batch
 
 def train_one_epoch_point_supervision(model, loader, optimizer, device):
     model.train()
@@ -355,20 +348,6 @@ mask_trans = T.Compose(
     ]
 )
 
-# ================== SAMPLING STRATEGY CONFIGURATION ==================
-# Available sampling methods for click simulation:
-# - "random": Random sampling from valid regions (original method)
-# - "grid": Grid-based sampling with auto-calculated spacing based on number of clicks
-# - "boundary": Samples points from lesion boundaries/edges using morphological operations
-# - "poisson": Poisson disk sampling with minimum distance constraints for better distribution
-# 
-# Each method has different advantages:
-# - boundary: Good for edge-focused supervision, emphasizes lesion boundaries
-# - poisson: Avoids clustering, ensures minimum distance between points
-# - grid: Systematic coverage, predictable distribution
-# - random: Simple baseline, good for general supervision
-SAMPLING_METHOD = "poisson"  # Change this to test different sampling methods
-
 # Load UNET
 
 train_loader_PH2, val_loader_PH2, test_loader_PH2 = make_ph2_loaders(
@@ -376,8 +355,6 @@ train_loader_PH2, val_loader_PH2, test_loader_PH2 = make_ph2_loaders(
     batch_size=2,
     img_transform=T.ToTensor(),
     mask_transform=None,
-    sampling_method=SAMPLING_METHOD,
-    poisson_min_dist=30,  # Only used when sampling_method="poisson"
 )
 
 # test clicks and save the picture
@@ -388,11 +365,9 @@ train_ds = PH2Dataset(
     test_ratio=0.2,
     seed=42,
     transform_img=T.ToTensor(),
-    transform_mask=mask_trans,
-    clicks_pos=10,
-    clicks_neg=10,
-    sampling_method=SAMPLING_METHOD,
-    poisson_min_dist=30  # Only used when sampling_method="poisson"
+    transform_mask=None,
+    clicks_pos=5,
+    clicks_neg=5,
 )
 
 fig, axes = plt.subplots(1, 2)
@@ -424,16 +399,15 @@ for i in range(1):
     axes[2*i + 1].axis("off")
 
 plt.tight_layout()
-plt.savefig(f"/zhome/9c/f/221532/Project3/part2/Ablation_results/clicks_{SAMPLING_METHOD}.png", dpi=150)
+plt.savefig("clicks.png", dpi=150)
 plt.close()
 
 # click annotations, training loop
 print("Started training")
 for epoch in range(10):
-    tr_loss = train_one_epoch_point_supervision(model2, train_loader_PH2, optimizer, device)
+    tr_loss = train_one_epoch_point_supervision(model2, train_loader_PH2, optimizer2, device)
     va_loss, va_m = eval_epoch_point_supervision(model2, val_loader_PH2, device)
-    print(f"{train_ds.clicks_pos} {SAMPLING_METHOD} clicks:"
-          f"[PH2][{epoch+1:02d}] "
+    print(f"[PH2][{epoch+1:02d}] "
           f"train_loss={tr_loss:.4f}  val_loss={va_loss:.4f} | "
         #   f"train: Dice={tr_m['dice']:.3f} IoU={tr_m['iou']:.3f} Acc={tr_m['acc']:.3f} Sen={tr_m['sen']:.3f} Spec={tr_m['spe']:.3f} | "
           f"val: Dice={va_m['dice']:.3f} IoU={va_m['iou']:.3f} Acc={va_m['acc']:.3f} Sen={va_m['sen']:.3f} Spec={va_m['spe']:.3f}")
